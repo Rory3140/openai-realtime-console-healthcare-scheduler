@@ -411,47 +411,141 @@ export function ConsolePage() {
         return { ok: true };
       }
     );
+
     client.addTool(
       {
-        name: 'get_weather',
+        name: 'add_event',
         description:
-          'Retrieves the weather for a given lat, lng coordinate pair. Specify a label for the location.',
+          'Creates a calendar event with a specified title, location, description, start time, and end time.',
         parameters: {
           type: 'object',
           properties: {
-            lat: {
-              type: 'number',
-              description: 'Latitude',
-            },
-            lng: {
-              type: 'number',
-              description: 'Longitude',
+            summary: {
+              type: 'string',
+              description: 'Title of the event',
             },
             location: {
               type: 'string',
-              description: 'Name of the location',
+              description: 'Location of the event',
+            },
+            description: {
+              type: 'string',
+              description: 'Description of the event',
+            },
+            start_time: {
+              type: 'string',
+              description:
+                'Start time in ISO format with timezone (e.g., "2024-11-11T14:00:00-05:00")',
+            },
+            end_time: {
+              type: 'string',
+              description:
+                'End time in ISO format with timezone (e.g., "2024-11-11T15:00:00-05:00")',
             },
           },
-          required: ['lat', 'lng', 'location'],
+          required: [
+            'summary',
+            'location',
+            'description',
+            'start_time',
+            'end_time',
+          ],
         },
       },
-      async ({ lat, lng, location }: { [key: string]: any }) => {
-        setMarker({ lat, lng, location });
-        setCoords({ lat, lng, location });
-        const result = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,wind_speed_10m`
+      async ({
+        summary,
+        location,
+        description,
+        start_time,
+        end_time,
+      }: {
+        [key: string]: any;
+      }) => {
+        // Make sure to send the start_time and end_time as ISO strings with timezone offset
+        const response = await fetch(
+          'https://healthcare-scheduler-api-zsdrarzakq-uk.a.run.app/add_event',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              summary,
+              location,
+              description,
+              start_time,
+              end_time,
+            }),
+          }
         );
-        const json = await result.json();
-        const temperature = {
-          value: json.current.temperature_2m as number,
-          units: json.current_units.temperature_2m as string,
-        };
-        const wind_speed = {
-          value: json.current.wind_speed_10m as number,
-          units: json.current_units.wind_speed_10m as string,
-        };
-        setMarker({ lat, lng, location, temperature, wind_speed });
-        return json;
+        const json = await response.json();
+
+        // Check for success or error
+        if (response.ok) {
+          return `Event created successfully: ${json.event_link}`;
+        } else {
+          return `Error creating event: ${json.error}`;
+        }
+      }
+    );
+
+    client.addTool(
+      {
+        name: 'get_events',
+        description:
+          'Retrieves upcoming events from a Google Calendar hosted on a Google Cloud API endpoint.',
+        parameters: {
+          type: 'object',
+          properties: {
+            maxResults: {
+              type: 'number',
+              description:
+                'The maximum number of events to retrieve. Defaults to 50 if not specified.',
+            },
+          },
+        },
+      },
+      async ({ maxResults }: { maxResults?: number }) => {
+        const apiUrl = new URL(
+          'https://healthcare-scheduler-api-zsdrarzakq-uk.a.run.app/get_events'
+        );
+        if (maxResults)
+          apiUrl.searchParams.append('maxResults', maxResults.toString());
+
+        try {
+          const response = await fetch(apiUrl.toString(), {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            return `Error retrieving events: ${
+              errorData.error || 'Unknown error'
+            }`;
+          }
+
+          const eventData = await response.json();
+          const events = eventData.events || [];
+
+          if (events.length === 0) {
+            return 'No upcoming events found.';
+          }
+
+          const eventDescriptions = events.map(
+            (event: any) =>
+              `${event.summary} from ${event.start} to ${event.end}`
+          );
+
+          return `Upcoming events:\n${eventDescriptions.join('\n')}`;
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : 'Unknown error';
+          console.error('Detailed error:', error); // Logs error for better insight
+          return `Failed to fetch events: ${errorMessage}. Check network connection, Cloud Run URL, and CORS settings.`;
+        }
       }
     );
 
@@ -692,32 +786,6 @@ export function ConsolePage() {
           </div>
         </div>
         <div className="content-right">
-          <div className="content-block map">
-            <div className="content-block-title">get_weather()</div>
-            <div className="content-block-title bottom">
-              {marker?.location || 'not yet retrieved'}
-              {!!marker?.temperature && (
-                <>
-                  <br />
-                  🌡️ {marker.temperature.value} {marker.temperature.units}
-                </>
-              )}
-              {!!marker?.wind_speed && (
-                <>
-                  {' '}
-                  🍃 {marker.wind_speed.value} {marker.wind_speed.units}
-                </>
-              )}
-            </div>
-            <div className="content-block-body full">
-              {coords && (
-                <Map
-                  center={[coords.lat, coords.lng]}
-                  location={coords.location}
-                />
-              )}
-            </div>
-          </div>
           <div className="content-block kv">
             <div className="content-block-title">set_memory()</div>
             <div className="content-block-body content-kv">
